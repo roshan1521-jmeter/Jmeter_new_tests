@@ -32,11 +32,11 @@ on:
       jmeter_version:
         description: 'JMeter version to use'
         required: false
-        default: '5.6.3'
+        default: '5.5'
         type: choice
         options:
-          - '5.6.3'
           - '5.5'
+          - '5.6.3'
 
 jobs:
   jmeter-test:
@@ -56,13 +56,8 @@ jobs:
         run: |
           $jmeterVersion = "${{ github.event.inputs.jmeter_version }}"
           
-          # Use different base URLs depending on version
-          if ($jmeterVersion -eq "5.6.3") {
-            $downloadUrl = "https://downloads.apache.org/jmeter/binaries/apache-jmeter-${jmeterVersion}.zip"
-          } else {
-            # Use archive.apache.org for older versions
-            $downloadUrl = "https://archive.apache.org/dist/jmeter/binaries/apache-jmeter-${jmeterVersion}.zip"
-          }
+          # Use the correct URL for the specified version
+          $downloadUrl = "https://archive.apache.org/dist/jmeter/binaries/apache-jmeter-${jmeterVersion}.zip"
           
           Write-Host "Downloading JMeter version ${jmeterVersion} from ${downloadUrl}"
           
