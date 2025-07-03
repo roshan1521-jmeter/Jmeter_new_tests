@@ -1,5 +1,4 @@
-name: JMeter_new_Test
-
+name: JMeter_new_tests
 on:
   workflow_dispatch:
     inputs:
@@ -44,7 +43,7 @@ jobs:
           java-version: '8'
           distribution: 'zulu'
 
-      - name: Download Apache JMeter
+      - name: Download Apache JMeter 5.5
         run: |
           curl -o apache-jmeter.zip https://downloads.apache.org/jmeter/binaries/apache-jmeter-5.5.zip
           Expand-Archive -Path apache-jmeter.zip -DestinationPath .
@@ -130,7 +129,7 @@ jobs:
 
       - name: Upload Test Results
         if: always()
-        uses: actions/upload-artifact@v4  # Updated from v3 to v4
+        uses: actions/upload-artifact@v4
         with:
           name: jmeter-results-${{ github.event.inputs.test_file }}-${{ github.run_id }}
           path: results
