@@ -55,7 +55,14 @@ jobs:
       - name: Download Apache JMeter
         run: |
           $jmeterVersion = "${{ github.event.inputs.jmeter_version }}"
-          $downloadUrl = "https://downloads.apache.org/jmeter/binaries/apache-jmeter-${jmeterVersion}.zip"
+          
+          # Use different base URLs depending on version
+          if ($jmeterVersion -eq "5.6.3") {
+            $downloadUrl = "https://downloads.apache.org/jmeter/binaries/apache-jmeter-${jmeterVersion}.zip"
+          } else {
+            # Use archive.apache.org for older versions
+            $downloadUrl = "https://archive.apache.org/dist/jmeter/binaries/apache-jmeter-${jmeterVersion}.zip"
+          }
           
           Write-Host "Downloading JMeter version ${jmeterVersion} from ${downloadUrl}"
           
@@ -107,7 +114,7 @@ jobs:
       - name: Run JMeter Test
         run: |
           echo "Running JMeter test with parameters:"
-          echo "JMeter version: ${{ github.event.inputs.jmeter_version }}"
+          echo "JMeter version: %JMETER_PATH%"
           echo "Test file: ${{ github.event.inputs.test_file }}"
           echo "Threads: ${{ github.event.inputs.threads }}"
           echo "Ramp-up: ${{ github.event.inputs.rampup }}"
