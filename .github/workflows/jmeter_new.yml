@@ -1,4 +1,5 @@
 name: JMeter_new_tests
+
 on:
   workflow_dispatch:
     inputs:
@@ -28,6 +29,14 @@ on:
         description: 'Number of loops (if duration is 0)'
         required: false
         default: '1'
+      jmeter_version:
+        description: 'JMeter version to use'
+        required: false
+        default: '5.6.3'
+        type: choice
+        options:
+          - '5.6.3'
+          - '5.5'
 
 jobs:
   jmeter-test:
@@ -43,31 +52,52 @@ jobs:
           java-version: '8'
           distribution: 'zulu'
 
-      - name: Download Apache JMeter 5.5
+      - name: Download Apache JMeter
         run: |
-          curl -o apache-jmeter.zip https://downloads.apache.org/jmeter/binaries/apache-jmeter-5.5.zip
-          Expand-Archive -Path apache-jmeter.zip -DestinationPath .
-          echo "Downloaded and extracted JMeter to $PWD\apache-jmeter-5.5"
-        shell: pwsh
-
-      - name: Verify JMeter Files
-        run: |
-          if (Test-Path -Path "apache-jmeter-5.5\bin\jmeter.bat") {
-            Write-Host "JMeter executable found"
-          } else {
-            Write-Error "JMeter executable not found"
+          $jmeterVersion = "${{ github.event.inputs.jmeter_version }}"
+          $downloadUrl = "https://downloads.apache.org/jmeter/binaries/apache-jmeter-${jmeterVersion}.zip"
+          
+          Write-Host "Downloading JMeter version ${jmeterVersion} from ${downloadUrl}"
+          
+          try {
+            Invoke-WebRequest -Uri $downloadUrl -OutFile "apache-jmeter.zip"
+            Write-Host "Download completed successfully"
+          }
+          catch {
+            Write-Error "Failed to download JMeter: $_"
             exit 1
           }
           
-          if (Test-Path -Path "${{ github.workspace }}\${{ github.event.inputs.test_file }}") {
-            Write-Host "Test file found at root: ${{ github.workspace }}\${{ github.event.inputs.test_file }}"
-          } elseif (Test-Path -Path "${{ github.workspace }}\jmeter-tests\${{ github.event.inputs.test_file }}") {
-            Write-Host "Test file found in jmeter-tests directory: ${{ github.workspace }}\jmeter-tests\${{ github.event.inputs.test_file }}"
-          } else {
-            Write-Error "Test file not found: ${{ github.event.inputs.test_file }}"
-            Get-ChildItem -Path ${{ github.workspace }} -Recurse -Filter "*.jmx" | ForEach-Object { Write-Host "Found JMX file: $($_.FullName)" }
+          try {
+            Write-Host "Extracting JMeter archive..."
+            Expand-Archive -Path "apache-jmeter.zip" -DestinationPath "." -Force
+            Write-Host "Extraction completed successfully"
+          }
+          catch {
+            Write-Error "Failed to extract JMeter archive: $_"
             exit 1
           }
+          
+          $jmeterPath = "apache-jmeter-${jmeterVersion}"
+          if (Test-Path -Path "${jmeterPath}\bin\jmeter.bat") {
+            Write-Host "JMeter executable found at ${jmeterPath}\bin\jmeter.bat"
+          } else {
+            Write-Error "JMeter executable not found at expected location"
+            Get-ChildItem -Path "." -Recurse | Select-Object -First 20 | Format-Table -Property FullName
+            exit 1
+          }
+          
+          # Set output variable for later steps
+          echo "JMETER_PATH=${jmeterPath}" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      - name: List Files in Repository
+        run: |
+          Write-Host "Files in repository root:"
+          Get-ChildItem -Path "${{ github.workspace }}" | Format-Table -Property Name, Length, LastWriteTime
+          
+          Write-Host "JMX files in repository:"
+          Get-ChildItem -Path "${{ github.workspace }}" -Recurse -Filter "*.jmx" | Format-Table -Property FullName, Length, LastWriteTime
         shell: pwsh
 
       - name: Create Results Directory
@@ -77,6 +107,7 @@ jobs:
       - name: Run JMeter Test
         run: |
           echo "Running JMeter test with parameters:"
+          echo "JMeter version: ${{ github.event.inputs.jmeter_version }}"
           echo "Test file: ${{ github.event.inputs.test_file }}"
           echo "Threads: ${{ github.event.inputs.threads }}"
           echo "Ramp-up: ${{ github.event.inputs.rampup }}"
@@ -96,7 +127,10 @@ jobs:
             exit 1
           )
           
-          apache-jmeter-5.5\bin\jmeter.bat -n -t %TEST_PATH% -l results\results.jtl -e -o results\report -Jthreads=${{ github.event.inputs.threads }} -Jrampup=${{ github.event.inputs.rampup }} -Jduration=${{ github.event.inputs.duration }} -Jloops=${{ github.event.inputs.loops }}
+          echo "Using JMeter path: %JMETER_PATH%"
+          echo "Using test path: %TEST_PATH%"
+          
+          %JMETER_PATH%\bin\jmeter.bat -n -t %TEST_PATH% -l results\results.jtl -e -o results\report -Jthreads=${{ github.event.inputs.threads }} -Jrampup=${{ github.event.inputs.rampup }} -Jduration=${{ github.event.inputs.duration }} -Jloops=${{ github.event.inputs.loops }}
           
           if %ERRORLEVEL% NEQ 0 (
             echo "JMeter execution failed with error code %ERRORLEVEL%"
@@ -110,6 +144,7 @@ jobs:
           echo "# JMeter Test Results" > summary.md
           echo "" >> summary.md
           echo "## Test Parameters" >> summary.md
+          echo "- JMeter Version: ${{ github.event.inputs.jmeter_version }}" >> summary.md
           echo "- Test File: ${{ github.event.inputs.test_file }}" >> summary.md
           echo "- Threads: ${{ github.event.inputs.threads }}" >> summary.md
           echo "- Ramp-up: ${{ github.event.inputs.rampup }} seconds" >> summary.md
