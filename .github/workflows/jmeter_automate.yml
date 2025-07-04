@@ -36,8 +36,8 @@ on:
           - '5.5'
           - '5.6.3'
   schedule:
-    # Run today at 10:07 AM IST (04:58 AM UTC)
-    - cron: '18 10 5 7 *'  # This is for June 7th at 11:00 AM UTC - ADJUST THIS TO TOMORROW'S DATE
+  # Run on July 4, 2025 at 04:53 AM UTC (10:07 AM IST)
+  - cron: '53 4 4 7 *'
 
 jobs:
   jmeter-test:
