@@ -36,7 +36,7 @@ on:
           - '5.5'
           - '5.6.3'
   schedule:
-    # Run tomorrow at 11:00 AM UTC
+    # Run today at 10:07 AM IST (04:58 AM UTC)
     - cron: '18 10 5 7 *'  # This is for June 7th at 11:00 AM UTC - ADJUST THIS TO TOMORROW'S DATE
 
 jobs:
