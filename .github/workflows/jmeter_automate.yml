@@ -1,0 +1,196 @@
+name: JMeter_automate_run
+on:
+  workflow_dispatch:
+    inputs:
+      test_file:
+        description: 'JMeter test file to run'
+        required: true
+        type: choice
+        options:
+          - php_test.jmx
+          - api_test.jmx
+          - google_1.jmx
+        default: 'google_1.jmx'
+      threads:
+        description: 'Number of threads'
+        required: false
+        default: '5'
+      rampup:
+        description: 'Ramp-up period in seconds'
+        required: false
+        default: '60'
+      duration:
+        description: 'Test duration in seconds (0 for loop count)'
+        required: false
+        default: '0'
+      loops:
+        description: 'Number of loops (if duration is 0)'
+        required: false
+        default: '1'
+      jmeter_version:
+        description: 'JMeter version to use'
+        required: false
+        default: '5.5'
+        type: choice
+        options:
+          - '5.5'
+          - '5.6.3'
+  schedule:
+    # Run tomorrow at 11:00 AM UTC
+    - cron: '0 11 7 6 *'  # This is for June 7th at 11:00 AM UTC - ADJUST THIS TO TOMORROW'S DATE
+
+jobs:
+  jmeter-test:
+    runs-on: windows-latest
+
+    steps:
+      - name: Set Parameters for Scheduled Run
+        if: github.event_name == 'schedule'
+        run: |
+          echo "SELECTED_TEST_FILE=php_test.jmx" >> $GITHUB_ENV
+          echo "SELECTED_THREADS=50" >> $GITHUB_ENV
+          echo "SELECTED_RAMPUP=100" >> $GITHUB_ENV
+          echo "SELECTED_DURATION=0" >> $GITHUB_ENV
+          echo "SELECTED_LOOPS=1" >> $GITHUB_ENV
+          echo "SELECTED_JMETER_VERSION=5.5" >> $GITHUB_ENV
+          echo "Running scheduled test for tomorrow"
+        shell: bash
+
+      - name: Set Parameters for Manual Run
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "SELECTED_TEST_FILE=${{ github.event.inputs.test_file }}" >> $GITHUB_ENV
+          echo "SELECTED_THREADS=${{ github.event.inputs.threads }}" >> $GITHUB_ENV
+          echo "SELECTED_RAMPUP=${{ github.event.inputs.rampup }}" >> $GITHUB_ENV
+          echo "SELECTED_DURATION=${{ github.event.inputs.duration }}" >> $GITHUB_ENV
+          echo "SELECTED_LOOPS=${{ github.event.inputs.loops }}" >> $GITHUB_ENV
+          echo "SELECTED_JMETER_VERSION=${{ github.event.inputs.jmeter_version }}" >> $GITHUB_ENV
+          echo "Running manual test with user-provided parameters"
+        shell: bash
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 8
+        uses: actions/setup-java@v4
+        with:
+          java-version: '8'
+          distribution: 'zulu'
+
+      - name: Download Apache JMeter
+        run: |
+          $jmeterVersion = "${{ env.SELECTED_JMETER_VERSION }}"
+          
+          # Use the correct URL for the specified version
+          $downloadUrl = "https://archive.apache.org/dist/jmeter/binaries/apache-jmeter-${jmeterVersion}.zip"
+          
+          Write-Host "Downloading JMeter version ${jmeterVersion} from ${downloadUrl}"
+          
+          try {
+            Invoke-WebRequest -Uri $downloadUrl -OutFile "apache-jmeter.zip"
+            Write-Host "Download completed successfully"
+          }
+          catch {
+            Write-Error "Failed to download JMeter: $_"
+            exit 1
+          }
+          
+          try {
+            Write-Host "Extracting JMeter archive..."
+            Expand-Archive -Path "apache-jmeter.zip" -DestinationPath "." -Force
+            Write-Host "Extraction completed successfully"
+          }
+          catch {
+            Write-Error "Failed to extract JMeter archive: $_"
+            exit 1
+          }
+          
+          $jmeterPath = "apache-jmeter-${jmeterVersion}"
+          if (Test-Path -Path "${jmeterPath}\bin\jmeter.bat") {
+            Write-Host "JMeter executable found at ${jmeterPath}\bin\jmeter.bat"
+          } else {
+            Write-Error "JMeter executable not found at expected location"
+            Get-ChildItem -Path "." -Recurse | Select-Object -First 20 | Format-Table -Property FullName
+            exit 1
+          }
+          
+          # Set output variable for later steps
+          echo "JMETER_PATH=${jmeterPath}" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      - name: Create Results Directory
+        run: mkdir -p results
+        shell: pwsh
+
+      - name: Run JMeter Test
+        run: |
+          echo "Running JMeter test with parameters:"
+          echo "JMeter version: %JMETER_PATH%"
+          echo "Test file: ${{ env.SELECTED_TEST_FILE }}"
+          echo "Threads: ${{ env.SELECTED_THREADS }}"
+          echo "Ramp-up: ${{ env.SELECTED_RAMPUP }}"
+          echo "Duration: ${{ env.SELECTED_DURATION }}"
+          echo "Loops: ${{ env.SELECTED_LOOPS }}"
+          echo "Trigger: ${{ github.event_name }}"
+          
+          # Try to find the test file in different locations
+          if exist "${{ github.workspace }}\${{ env.SELECTED_TEST_FILE }}" (
+            echo "Found test file in root directory"
+            set TEST_PATH=${{ github.workspace }}\${{ env.SELECTED_TEST_FILE }}
+          ) else if exist "${{ github.workspace }}\jmeter-tests\${{ env.SELECTED_TEST_FILE }}" (
+            echo "Found test file in jmeter-tests directory"
+            set TEST_PATH=${{ github.workspace }}\jmeter-tests\${{ env.SELECTED_TEST_FILE }}
+          ) else (
+            echo "ERROR: Test file not found"
+            dir /s *.jmx
+            exit 1
+          )
+          
+          echo "Using JMeter path: %JMETER_PATH%"
+          echo "Using test path: %TEST_PATH%"
+          
+          %JMETER_PATH%\bin\jmeter.bat -n -t %TEST_PATH% -l results\results.jtl -e -o results\report -Jthreads=${{ env.SELECTED_THREADS }} -Jrampup=${{ env.SELECTED_RAMPUP }} -Jduration=${{ env.SELECTED_DURATION }} -Jloops=${{ env.SELECTED_LOOPS }}
+          
+          if %ERRORLEVEL% NEQ 0 (
+            echo "JMeter execution failed with error code %ERRORLEVEL%"
+            exit %ERRORLEVEL%
+          )
+        shell: cmd
+
+      - name: Generate Summary
+        if: always()
+        run: |
+          echo "# JMeter Test Results" > summary.md
+          echo "" >> summary.md
+          echo "## Test Parameters" >> summary.md
+          echo "- Trigger: ${{ github.event_name }}" >> summary.md
+          echo "- JMeter Version: ${{ env.SELECTED_JMETER_VERSION }}" >> summary.md
+          echo "- Test File: ${{ env.SELECTED_TEST_FILE }}" >> summary.md
+          echo "- Threads: ${{ env.SELECTED_THREADS }}" >> summary.md
+          echo "- Ramp-up: ${{ env.SELECTED_RAMPUP }} seconds" >> summary.md
+          echo "- Duration: ${{ env.SELECTED_DURATION }} seconds" >> summary.md
+          echo "- Loops: ${{ env.SELECTED_LOOPS }}" >> summary.md
+          
+          if (Test-Path -Path "results\results.jtl") {
+            echo "" >> summary.md
+            echo "## Results" >> summary.md
+            echo "Test completed successfully. See artifacts for detailed results." >> summary.md
+          } else {
+            echo "" >> summary.md
+            echo "## Results" >> summary.md
+            echo "⚠️ Test execution failed or did not produce results file." >> summary.md
+          }
+        shell: pwsh
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jmeter-results-${{ env.SELECTED_TEST_FILE }}-${{ github.run_id }}
+          path: results
+          retention-days: 30
+
+      - name: Add Summary
+        if: always()
+        run: cat summary.md >> $GITHUB_STEP_SUMMARY
+        shell: bash
